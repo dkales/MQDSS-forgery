@@ -9,6 +9,7 @@
 #include "gf31.h"
 #include "fips202.h"
 #include "sha3/KeccakHash.h"
+#include "sha3/KeccakHashtimes4.h"
 
 static void HR(unsigned char* R, const unsigned char* sk,
 	const unsigned char* m, const unsigned int mlen)
@@ -48,6 +49,22 @@ static void Hdigest_fast(unsigned char* D,
 	Keccak_HashUpdate(&ctx, m, mlen * 8);
 	Keccak_HashFinal(&ctx, NULL);
 	Keccak_HashSqueeze(&ctx, D, HASH_BYTES * 8);
+}
+
+static void Hdigest_x4(unsigned char** D,
+	const unsigned char* pk, const unsigned char** R,
+	const unsigned char* m, const unsigned int mlen)
+{
+
+	Keccak_HashInstancetimes4 ctx;
+	Keccak_HashInitializetimes4_SHAKE256(&ctx);
+	const unsigned char* pks[4] = { pk, pk, pk, pk };
+	Keccak_HashUpdatetimes4(&ctx, pks, PK_BYTES * 8);
+	Keccak_HashUpdatetimes4(&ctx, R, HASH_BYTES * 8);
+	const unsigned char* ms[4] = { m, m, m, m };
+	Keccak_HashUpdatetimes4(&ctx, ms, mlen * 8);
+	Keccak_HashFinaltimes4(&ctx, NULL);
+	Keccak_HashSqueezetimes4(&ctx, D, HASH_BYTES * 8);
 }
 
 static void Hsigma0(unsigned char* sigma0, const unsigned char* commits)
@@ -281,14 +298,17 @@ int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
 	unsigned char* h0 = D_sigma0_h0_sigma1 + 2 * HASH_BYTES;
 	unsigned char* t1packed = D_sigma0_h0_sigma1 + 3 * HASH_BYTES;
 	unsigned char* e1packed = D_sigma0_h0_sigma1 + 3 * HASH_BYTES + ROUNDS * NPACKED_BYTES;
-	unsigned char shakeblock[SHAKE256_RATE];
+	unsigned char shakeblock[SHAKE256_RATE * 4];
 	unsigned char h1[((ROUNDS + 7) & ~7) >> 3];
 	unsigned char rnd_seed[HASH_BYTES + SEED_BYTES];
 	unsigned char rho[2 * ROUNDS * HASH_BYTES];
 	unsigned char* rho0 = rho;
 	unsigned char* rho1 = rho + ROUNDS * HASH_BYTES;
 	unsigned char* org_sig = sig;
+	unsigned char R_buf[HASH_BYTES * 4];
+	unsigned char D_buf[(HASH_BYTES * 3 + ROUNDS * (NPACKED_BYTES + MPACKED_BYTES)) * 4];
 	const unsigned char* org_pk = pk;
+	unsigned char h1_buf[4* (((ROUNDS + 7) & ~7) >> 3)];
 	gf31 sk_gf31[N];
 	gf31 rnd[(2 * N + M) * ROUNDS];  // Concatenated for easy RNG.
 	gf31* r0 = rnd;
@@ -387,36 +407,63 @@ int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
 
 	int correct_guesses;
 	unsigned long long int first_phase_try = 0;
+	unsigned char* Rs[4] = { R_buf, R_buf + HASH_BYTES, R_buf + 2 * HASH_BYTES, R_buf + 3 * HASH_BYTES };
+	unsigned char* Ds[4] = { D_buf,
+							D_buf + (HASH_BYTES * 3 + ROUNDS * (NPACKED_BYTES + MPACKED_BYTES)),
+							D_buf + 2*(HASH_BYTES * 3 + ROUNDS * (NPACKED_BYTES + MPACKED_BYTES)),
+							D_buf + 3*(HASH_BYTES * 3 + ROUNDS * (NPACKED_BYTES + MPACKED_BYTES)), };
+	unsigned char* shakeblocks[4] = { shakeblock, shakeblock + SHAKE256_RATE, shakeblock + 2 * SHAKE256_RATE, shakeblock + 3 * SHAKE256_RATE };
+	memcpy(Ds[0] + HASH_BYTES, sigma0, HASH_BYTES);
+	memcpy(Ds[1] + HASH_BYTES, sigma0, HASH_BYTES);
+	memcpy(Ds[2] + HASH_BYTES, sigma0, HASH_BYTES);
+	memcpy(Ds[3] + HASH_BYTES, sigma0, HASH_BYTES);
+	randombytes(Rs[0], HASH_BYTES);
+	randombytes(Rs[1], HASH_BYTES);
+	randombytes(Rs[2], HASH_BYTES);
+	randombytes(Rs[3], HASH_BYTES);
 	// Hot Loop 1
-	randombytes(org_sig, HASH_BYTES);
-	Keccak_HashInstance ctx;
+	Keccak_HashInstancetimes4 ctx;
 	do {
-		first_phase_try++;
-		correct_guesses = 0;
+		first_phase_try += 4;
 		// calculate some "random" R, does not matter how
 		// if we were unsucessful, pick new R, try again
-		*((uint64_t*)org_sig) += 1;
-		Hdigest_fast(D, org_pk, org_sig, m, mlen);
+		*((uint64_t*)Rs[0]) += 1;
+		*((uint64_t*)Rs[1]) += 1;
+		*((uint64_t*)Rs[2]) += 1;
+		*((uint64_t*)Rs[3]) += 1;
+		Hdigest_x4(Ds, org_pk, Rs, m, mlen);
 
 		// generate the first challenge
-		Keccak_HashInitialize_SHAKE256(&ctx);
-		Keccak_HashUpdate(&ctx, D_sigma0_h0_sigma1, 2 * HASH_BYTES * 8);
-		Keccak_HashFinal(&ctx, NULL);
-		Keccak_HashSqueeze(&ctx, shakeblock, SHAKE256_RATE * 8);
-		memcpy(h0, shakeblock, HASH_BYTES);
-		// check how many alphas were guessed correctly
-		alpha_count = 0;
-		for (i = 0; i < ROUNDS; i++) {
-			do {
-				alphas[i] = shakeblock[alpha_count] & 31;
-				alpha_count++;
-				if (alpha_count == SHAKE256_RATE) {
-					alpha_count = 0;
-					Keccak_HashSqueeze(&ctx, shakeblock, SHAKE256_RATE * 8);
+		Keccak_HashInitializetimes4_SHAKE256(&ctx);
+		Keccak_HashUpdatetimes4(&ctx, Ds, 2 * HASH_BYTES * 8);
+		Keccak_HashFinaltimes4(&ctx, NULL);
+		Keccak_HashSqueezetimes4(&ctx, shakeblocks, SHAKE256_RATE * 8);
+
+		for (j = 0; j < 4; j++) {
+			memcpy(h0, shakeblocks[j], HASH_BYTES);
+
+			// check how many alphas were guessed correctly
+			correct_guesses = 0;
+			alpha_count = 0;
+			for (i = 0; i < ROUNDS; i++) {
+				do {
+					alphas[i] = shakeblocks[j][alpha_count] & 31;
+					alpha_count++;
+					if (alpha_count == SHAKE256_RATE) {
+						// not implemented atm, fails for large number of rounds (100 or less should be fine with high prob)
+						// to implement, just  squeeze one more time for all 4 states, needs larger buffers etc
+						printf("not implemented for that high number of rounds\n");
+						return -1;
+					}
+				} while (alphas[i] == 31);
+				if (alphas[i] == alpha_guess) {
+					correct_guesses++;
 				}
-			} while (alphas[i] == 31);
-			if (alphas[i] == alpha_guess) {
-				correct_guesses++;
+			}
+			if (correct_guesses >= FIRST_ROUND_GUESSES) {
+				memcpy(D, Ds[j], HASH_BYTES);
+				memcpy(sig, Rs[j], HASH_BYTES);
+				break;
 			}
 		}
 		// do we have enough for the first phase?
@@ -490,11 +537,44 @@ int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
 		packbuf3[i] ^= t1packed[i];
 		packbuf4[i] ^= e1packed[i];
 	}
+	memcpy(Ds[0], D, 3 * HASH_BYTES + 2 * MPACKED_BYTES * ROUNDS);
+	memcpy(Ds[1], D, 3 * HASH_BYTES + 2 * MPACKED_BYTES * ROUNDS);
+	memcpy(Ds[2], D, 3 * HASH_BYTES + 2 * MPACKED_BYTES * ROUNDS);
+	memcpy(Ds[3], D, 3 * HASH_BYTES + 2 * MPACKED_BYTES * ROUNDS);
 
+	int highest_bit = (ROUNDS - correct_guesses);
+	int k;
+	for (i = 0, k = 0; i < ROUNDS; i++) {
+		if (alphas[i] == alpha_guess) {
+			continue;
+		}
+		k++;
+		if (k == highest_bit - 1) {
+			for (j = i * MPACKED_BYTES; j < (i + 1) * MPACKED_BYTES; j++) {
+				Ds[1][3 * HASH_BYTES + j] ^= packbuf3[j];
+				Ds[1][3 * HASH_BYTES + MPACKED_BYTES * ROUNDS + j] ^= packbuf4[j];
+				Ds[3][3 * HASH_BYTES + j] ^= packbuf3[j];
+				Ds[3][3 * HASH_BYTES + MPACKED_BYTES * ROUNDS + j] ^= packbuf4[j];
+			}
+		}
+		if (k == highest_bit) {
+			for (j = i * MPACKED_BYTES; j < (i + 1) * MPACKED_BYTES; j++) {
+				Ds[2][3 * HASH_BYTES + j] ^= packbuf3[j];
+				Ds[2][3 * HASH_BYTES + MPACKED_BYTES * ROUNDS + j] ^= packbuf4[j];
+				Ds[3][3 * HASH_BYTES + j] ^= packbuf3[j];
+				Ds[3][3 * HASH_BYTES + MPACKED_BYTES * ROUNDS + j] ^= packbuf4[j];
+			}
+		}
+	}
+
+	unsigned char* h1s[4] = { h1_buf, h1_buf + (((ROUNDS + 7) & ~7) >> 3),
+		h1_buf + 2 * (((ROUNDS + 7) & ~7) >> 3), h1_buf + 3 * (((ROUNDS + 7) & ~7) >> 3) };
 	// generate answers for second round
 	// Hot loop 2
+	Keccak_HashInstance ctx2;
 	unsigned long long int last_graycode = 0;
-	for (unsigned long long int round2_try = 0; round2_try < (1ULL << (ROUNDS - correct_guesses)); round2_try++) {
+	const unsigned long long int max_tries = (1ULL << (ROUNDS - correct_guesses));
+	for (unsigned long long int round2_try = 0; round2_try < max_tries/4; round2_try++) {
 		// for the rounds we did not cheat in the first phase, we generate challenges where we can answer either b=0 or b=1
 		// the round2_try variable indicates the current configuration, if bit i of round2_try is 0, we try to answer b=0 in repetition i,
 		// otherwise we try to answer b=1 in repetition i
@@ -515,53 +595,63 @@ int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
 					// since the packing is a multiple of 8 bits, we can do this easily
 					// use graycode to flip changing index
 					for (j = i * MPACKED_BYTES; j < (i + 1) * MPACKED_BYTES; j++) {
-						t1packed[j] ^= packbuf3[j];
-						e1packed[j] ^= packbuf4[j];
+						Ds[0][3*HASH_BYTES + j] ^= packbuf3[j];
+						Ds[0][3*HASH_BYTES + MPACKED_BYTES * ROUNDS + j] ^= packbuf4[j];
+						Ds[1][3*HASH_BYTES + j] ^= packbuf3[j];
+						Ds[1][3*HASH_BYTES + MPACKED_BYTES * ROUNDS + j] ^= packbuf4[j];
+						Ds[2][3*HASH_BYTES + j] ^= packbuf3[j];
+						Ds[2][3*HASH_BYTES + MPACKED_BYTES * ROUNDS + j] ^= packbuf4[j];
+						Ds[3][3*HASH_BYTES + j] ^= packbuf3[j];
+						Ds[3][3*HASH_BYTES + MPACKED_BYTES * ROUNDS + j] ^= packbuf4[j];
 					}
 					break;
 				}
 				round2_fixes++;
 			}
 		}
-		Keccak_HashInitialize_SHAKE256(&ctx);
-		Keccak_HashUpdate(&ctx, D_sigma0_h0_sigma1, (3 * HASH_BYTES + ROUNDS * (NPACKED_BYTES + MPACKED_BYTES)) * 8);
-		Keccak_HashFinal(&ctx, NULL);
-		Keccak_HashSqueeze(&ctx, h1, ((ROUNDS + 7) & ~7));
-		round2_fixes = 0;
-		unsigned char ok = 1;
-		for (i = 0; i < ROUNDS; i++) {
-			if (alphas[i] == alpha_guess)
-				continue;
-			b = (h1[(i >> 3)] >> (i & 7)) & 1;
-			if (b != ((graycode >> round2_fixes) & 1)) {
-				ok = 0;
-				break;
-			}
-			round2_fixes++;
-		}
-		if (ok) {
-			memcpy(sig, t1packed, NPACKED_BYTES * ROUNDS);
-			sig += NPACKED_BYTES * ROUNDS;
-			memcpy(sig, e1packed, MPACKED_BYTES * ROUNDS);
-			sig += MPACKED_BYTES * ROUNDS;
-			printf("found a valid forgery after %llu tries, second phase done, building signature\n", round2_try);
-			shake256(h1, ((ROUNDS + 7) & ~7) >> 3, D_sigma0_h0_sigma1, 3 * HASH_BYTES + ROUNDS * (NPACKED_BYTES + MPACKED_BYTES));
+		Keccak_HashInitializetimes4_SHAKE256(&ctx);
+		Keccak_HashUpdatetimes4(&ctx, Ds, (3 * HASH_BYTES + ROUNDS * (NPACKED_BYTES + MPACKED_BYTES)) * 8);
+		Keccak_HashFinaltimes4(&ctx, NULL);
+		Keccak_HashSqueezetimes4(&ctx, h1s, ((ROUNDS + 7) & ~7));
+		for (int k = 0; k < 4; k++) {
+			round2_fixes = 0;
+			unsigned char ok = 1;
 			for (i = 0; i < ROUNDS; i++) {
-				b = (h1[(i >> 3)] >> (i & 7)) & 1;
-				//printf("%d: %d == %d, %d\n", i, alphas[i], alpha_guess, b);
-				if (b == 0) {
-					gf31_npack(sig, r0 + i * N, N);
+				if (alphas[i] == alpha_guess)
+					continue;
+				b = (h1s[k][(i >> 3)] >> (i & 7)) & 1;
+				if (b != ((graycode+(max_tries/4)*k >> round2_fixes) & 1)) {
+					ok = 0;
+					break;
 				}
-				else if (b == 1) {
-					gf31_npack(sig, r1 + i * N, N);
-				}
-				memcpy(sig + NPACKED_BYTES, c + HASH_BYTES * (2 * i + (1 - b)), HASH_BYTES);
-				memcpy(sig + NPACKED_BYTES + HASH_BYTES, rho + (i + b * ROUNDS) * HASH_BYTES, HASH_BYTES);
-				sig += NPACKED_BYTES + 2 * HASH_BYTES;
+				round2_fixes++;
 			}
-			*siglen = SIG_LEN;
-			printf("verification of our forged signature returned %d\n", crypto_sign_verify(org_sig, SIG_LEN, m, mlen, org_pk));
-			return 0;
+			if (ok) {
+				memcpy(t1packed, Ds[k] + 3 * HASH_BYTES, NPACKED_BYTES * ROUNDS);
+				memcpy(e1packed, Ds[k] + 3 * HASH_BYTES + NPACKED_BYTES * ROUNDS, NPACKED_BYTES * ROUNDS);
+				memcpy(sig, t1packed, NPACKED_BYTES * ROUNDS);
+				sig += NPACKED_BYTES * ROUNDS;
+				memcpy(sig, e1packed, MPACKED_BYTES * ROUNDS);
+				sig += MPACKED_BYTES * ROUNDS;
+				printf("found a valid forgery after %llu tries, second phase done, building signature\n", round2_try);
+				shake256(h1, ((ROUNDS + 7) & ~7) >> 3, D_sigma0_h0_sigma1, 3 * HASH_BYTES + ROUNDS * (NPACKED_BYTES + MPACKED_BYTES));
+				for (i = 0; i < ROUNDS; i++) {
+					b = (h1[(i >> 3)] >> (i & 7)) & 1;
+					//printf("%d: %d == %d, %d\n", i, alphas[i], alpha_guess, b);
+					if (b == 0) {
+						gf31_npack(sig, r0 + i * N, N);
+					}
+					else if (b == 1) {
+						gf31_npack(sig, r1 + i * N, N);
+					}
+					memcpy(sig + NPACKED_BYTES, c + HASH_BYTES * (2 * i + (1 - b)), HASH_BYTES);
+					memcpy(sig + NPACKED_BYTES + HASH_BYTES, rho + (i + b * ROUNDS) * HASH_BYTES, HASH_BYTES);
+					sig += NPACKED_BYTES + 2 * HASH_BYTES;
+				}
+				*siglen = SIG_LEN;
+				printf("verification of our forged signature returned %d\n", crypto_sign_verify(org_sig, SIG_LEN, m, mlen, org_pk));
+				return 0;
+			}
 		}
 		last_graycode = graycode;
 	}
