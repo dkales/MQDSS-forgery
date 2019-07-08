@@ -5,6 +5,8 @@
 #include "../params.h"
 #include "../randombytes.h"
 #include "../api.h"
+#include "../fips202.h"
+#include "../sha3/KeccakHash.h"
 
 #define NTESTS 1000
 #define MLEN 32
@@ -59,6 +61,34 @@ static void print_results(const char *s, unsigned long long *t, size_t tlen, int
   printf("\n");
 }
 
+static void Hdigest(unsigned char* D,
+	const unsigned char* pk, const unsigned char* R,
+	const unsigned char* m, const unsigned int mlen)
+{
+	uint64_t s_inc[26];
+
+	shake256_inc_init(s_inc);
+	shake256_inc_absorb(s_inc, pk, PK_BYTES);
+	shake256_inc_absorb(s_inc, R, HASH_BYTES);
+	shake256_inc_absorb(s_inc, m, mlen);
+	shake256_inc_finalize(s_inc);
+	shake256_inc_squeeze(D, HASH_BYTES, s_inc);
+}
+
+static void Hdigest2(unsigned char* D,
+	const unsigned char* pk, const unsigned char* R,
+	const unsigned char* m, const unsigned int mlen)
+{
+
+	Keccak_HashInstance ctx;
+	Keccak_HashInitialize_SHAKE256(&ctx);
+	Keccak_HashUpdate(&ctx, pk, PK_BYTES * 8);
+	Keccak_HashUpdate(&ctx, R, HASH_BYTES * 8);
+	Keccak_HashUpdate(&ctx, m, mlen * 8);
+	Keccak_HashFinal(&ctx, NULL);
+	Keccak_HashSqueeze(&ctx, D, HASH_BYTES*8);
+}
+
 int main()
 {
     unsigned long long t[NTESTS];
@@ -69,6 +99,8 @@ int main()
     unsigned char m[MLEN];
     unsigned char sm[MLEN+CRYPTO_BYTES];
     unsigned char m_out[MLEN+CRYPTO_BYTES];
+	uint64_t shakestate[25] = { 0 };
+    unsigned char out[SHAKE256_RATE];
     unsigned long long mlen;
     unsigned long long smlen;
 
@@ -80,21 +112,35 @@ int main()
 
     for(i=0; i<NTESTS; i++) {
         t[i] = cpucycles();
-        crypto_sign_keypair(pk, sk);
+		shake256_absorb(shakestate, out, 2 * HASH_BYTES);
+		shake256_squeezeblocks(out, 1, shakestate);
     }
-    print_results("crypto_sign_keypair: ", t, NTESTS, 1);
+    print_results("shake_absorb: ", t, NTESTS, 1);
 
     for(i=0; i<NTESTS; i++) {
         t[i] = cpucycles();
-        crypto_sign(sm, &smlen, m, MLEN, sk);
+		Keccak_HashInstance ctx;
+		Keccak_HashInitialize_SHAKE256(&ctx);
+		Keccak_HashUpdate(&ctx, out, 2*HASH_BYTES*8);
+		Keccak_HashFinal(&ctx, NULL);
+		Keccak_HashSqueeze(&ctx, out, SHAKE256_RATE*8);
     }
-    print_results("crypto_sign: ", t, NTESTS, 1);
+    print_results("shake_absorb2: ", t, NTESTS, 1);
 
     for(i=0; i<NTESTS; i++) {
         t[i] = cpucycles();
-        crypto_sign_open(m_out, &mlen, sm, smlen, pk);
+		Hdigest(m_out, sm, sm, m, MLEN);
     }
-    print_results("crypto_sign_open: ", t, NTESTS, 1);
+    print_results("Hdigest: ", t, NTESTS, 1);
+
+    for(i=0; i<NTESTS; i++) {
+        t[i] = cpucycles();
+		Hdigest2(m_out, sm, sm, m, MLEN);
+    }
+    print_results("Hdigest2: ", t, NTESTS, 1);
+
+	Hdigest2(m_out, sm, sm, m, MLEN);
+	Hdigest2(out, sm, sm, m, MLEN);
 
     return 0;
 }

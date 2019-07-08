@@ -1,7 +1,7 @@
 CC = /usr/bin/cc
 CFLAGS = -Wall -Wextra -Wpedantic -O3 -mavx2
 
-SOURCES =          mq.c randombytes.c gf31.c fips202.c sign.c
+SOURCES =          mq.c randombytes.c gf31.c fips202.c sign.c sha3/KeccakP-1600-AVX2.s sha3/KeccakHash.c sha3/KeccakSpongeWidth1600.c sha3/KeccakSpongeWidth1600times4.c sha3/KeccakHashtimes4.c sha3/KeccakP-1600-times4-SIMD256.c
 HEADERS = params.h mq.h randombytes.h gf31.h fips202.h api.h
 
 DET_SOURCES = $(SOURCES:randombytes.%=rng.%)
