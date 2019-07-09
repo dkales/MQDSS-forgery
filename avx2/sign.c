@@ -275,12 +275,12 @@ int crypto_sign_signature(uint8_t* sig, size_t* siglen,
 	return 0;
 }
 
-//static void debug_print(const unsigned char* buf, size_t len) {
-//	for (size_t j = 0; j < len; j++) {
-//		printf("%02x", buf[j]);
-//	}
-//	printf("\n");
-//}
+static void debug_print(const unsigned char* buf, size_t len) {
+	for (size_t j = 0; j < len; j++) {
+		printf("%02x", buf[j]);
+	}
+	printf("\n");
+}
 
 /**
  * Returns an array containing a detached signature.
@@ -472,7 +472,7 @@ int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
 	} while (correct_guesses < FIRST_ROUND_GUESSES);
 	printf("got first phase after %llu tries, starting second phase\n", first_phase_try);
 
-	//debug_print(org_sig, HASH_BYTES);
+	debug_print(org_sig, HASH_BYTES);
 	sig += HASH_BYTES; // compensate for R
 	memcpy(sig, sigma0, HASH_BYTES);
 	//debug_print(sigma0, HASH_BYTES);
@@ -620,7 +620,7 @@ int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
 				if (alphas[i] == alpha_guess)
 					continue;
 				b = (h1s[k][(i >> 3)] >> (i & 7)) & 1;
-				if (b != ((graycode+(max_tries/4)*k >> round2_fixes) & 1)) {
+				if (b != (((graycode+(max_tries/4)*k) >> round2_fixes) & 1)) {
 					ok = 0;
 					break;
 				}
@@ -650,6 +650,8 @@ int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
 				}
 				*siglen = SIG_LEN;
 				printf("verification of our forged signature returned %d\n", crypto_sign_verify(org_sig, SIG_LEN, m, mlen, org_pk));
+				// first phase tries is already * 4, but we have 2 Keccak calls there, second phase needs to be * 4
+				printf("total number of Keccak calls: %llu\n", first_phase_try*2 + round2_try * 4);
 				return 0;
 			}
 		}

@@ -6,9 +6,9 @@
 #define F_LEN (M * (((N * (N + 1)) >> 1) + N)) /* Number of elements in F */
 
 // normally 135, reduced for testing
-#define ROUNDS 20
+#define ROUNDS 40
 // tradeoff between first and second rounds
-#define FIRST_ROUND_GUESSES 6
+#define FIRST_ROUND_GUESSES 12
 
 /* Number of bytes that N, M and F_LEN elements require when packed into a byte
    array, 5-bit elements packed continuously. */
