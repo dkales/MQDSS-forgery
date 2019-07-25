@@ -5,6 +5,7 @@
 #include "../params.h"
 #include "../randombytes.h"
 #include "../api.h"
+#include "../mq.h"
 #include "../fips202.h"
 #include "../sha3/KeccakHash.h"
 
@@ -103,12 +104,20 @@ int main()
     unsigned char out[SHAKE256_RATE];
     unsigned long long mlen;
     unsigned long long smlen;
+	gf31 x1[N], x2[N], x3[M];
+	signed char F[F_LEN];
 
     int i;
 
     randombytes(m, MLEN);
 
     printf("-- api --\n\n");
+
+    for(i=0; i<NTESTS; i++) {
+        t[i] = cpucycles();
+		G(x3, x1, x2, F);
+    }
+    print_results("G: ", t, NTESTS, 1);
 
     for(i=0; i<NTESTS; i++) {
         t[i] = cpucycles();

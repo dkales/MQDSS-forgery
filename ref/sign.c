@@ -450,7 +450,7 @@ int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
 				if ((round2_try >> round2_fixes) & 1) {
 					// this answer is valid when b=1
 					// send t1' = alpha'*r0 - t0
-					//      e1' = (alpha * (v - F(r1)) - G(t1',r1)) - (alpha'*(v-F(r1)) - G(t1',r1) - alpha'*F(r0) + e0)
+					//      e1' = (alpha * (v - F(r1)) - G(t1',r1)) - ((alpha'*(v-F(r1)) - G(t1',r1) - alpha'*F(r0) + e0))
 					memcpy(t1_send + i * M, t1 + i * M, M * sizeof(gf31));
 					memcpy(e1_send + i * M, gx2 + i * M, M * sizeof(gf31));
 				}
