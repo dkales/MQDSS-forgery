@@ -94,16 +94,11 @@ int main()
 {
     unsigned long long t[NTESTS];
 
-    unsigned char sk[CRYPTO_SECRETKEYBYTES] __attribute__ ((aligned (32)));
-    unsigned char pk[CRYPTO_PUBLICKEYBYTES] __attribute__ ((aligned (32)));
-
     unsigned char m[MLEN];
     unsigned char sm[MLEN+CRYPTO_BYTES];
     unsigned char m_out[MLEN+CRYPTO_BYTES];
 	uint64_t shakestate[25] = { 0 };
     unsigned char out[SHAKE256_RATE];
-    unsigned long long mlen;
-    unsigned long long smlen;
 	gf31 x1[N], x2[N], x3[M];
 	signed char F[F_LEN];
 

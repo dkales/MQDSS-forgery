@@ -12,12 +12,12 @@ int main()
     unsigned char sk[SK_BYTES];
     unsigned char m[MLEN];
     unsigned char sm[SIG_LEN + MLEN];
-    unsigned long long smlen;
+    size_t smlen;
 
     printf("Testing forgery for round reduced version (R=%d)...\n", ROUNDS);
     fflush(stdout);
 
     crypto_sign_keypair(pk, sk);
     randombytes(m, MLEN);
-    return crypto_sign_cheating(sm, &smlen, m, MLEN, pk);
+    return crypto_sign_forge(sm, &smlen, m, MLEN, pk);
 }

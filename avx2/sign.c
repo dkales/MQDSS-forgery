@@ -37,20 +37,6 @@ static void Hdigest(unsigned char* D,
 	shake256_inc_squeeze(D, HASH_BYTES, s_inc);
 }
 
-static void Hdigest_fast(unsigned char* D,
-	const unsigned char* pk, const unsigned char* R,
-	const unsigned char* m, const unsigned int mlen)
-{
-
-	Keccak_HashInstance ctx;
-	Keccak_HashInitialize_SHAKE256(&ctx);
-	Keccak_HashUpdate(&ctx, pk, PK_BYTES * 8);
-	Keccak_HashUpdate(&ctx, R, HASH_BYTES * 8);
-	Keccak_HashUpdate(&ctx, m, mlen * 8);
-	Keccak_HashFinal(&ctx, NULL);
-	Keccak_HashSqueeze(&ctx, D, HASH_BYTES * 8);
-}
-
 static void Hdigest_x4(unsigned char** D,
 	const unsigned char* pk, const unsigned char** R,
 	const unsigned char* m, const unsigned int mlen)
@@ -285,7 +271,7 @@ static void debug_print(const unsigned char* buf, size_t len) {
 /**
  * Returns an array containing a detached signature.
  */
-int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
+int crypto_sign_forge(uint8_t* sig, size_t* siglen,
 	const uint8_t* m, size_t mlen, const uint8_t* pk)
 {
 	signed char F[F_LEN];
@@ -431,11 +417,11 @@ int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
 		*((uint64_t*)Rs[1]) += 1;
 		*((uint64_t*)Rs[2]) += 1;
 		*((uint64_t*)Rs[3]) += 1;
-		Hdigest_x4(Ds, org_pk, Rs, m, mlen);
+		Hdigest_x4(Ds, org_pk, (const unsigned char**) Rs, m, mlen);
 
 		// generate the first challenge
 		Keccak_HashInitializetimes4_SHAKE256(&ctx);
-		Keccak_HashUpdatetimes4(&ctx, Ds, 2 * HASH_BYTES * 8);
+		Keccak_HashUpdatetimes4(&ctx, (const unsigned char**) Ds, 2 * HASH_BYTES * 8);
 		Keccak_HashFinaltimes4(&ctx, NULL);
 		Keccak_HashSqueezetimes4(&ctx, shakeblocks, SHAKE256_RATE * 8);
 
@@ -571,7 +557,6 @@ int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
 		h1_buf + 2 * (((ROUNDS + 7) & ~7) >> 3), h1_buf + 3 * (((ROUNDS + 7) & ~7) >> 3) };
 	// generate answers for second round
 	// Hot loop 2
-	Keccak_HashInstance ctx2;
 	unsigned long long int last_graycode = 0;
 	const unsigned long long int max_tries = (1ULL << (ROUNDS - correct_guesses));
 	for (unsigned long long int round2_try = 0; round2_try < max_tries/4; round2_try++) {
@@ -610,7 +595,7 @@ int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
 			}
 		}
 		Keccak_HashInitializetimes4_SHAKE256(&ctx);
-		Keccak_HashUpdatetimes4(&ctx, Ds, (3 * HASH_BYTES + ROUNDS * (NPACKED_BYTES + MPACKED_BYTES)) * 8);
+		Keccak_HashUpdatetimes4(&ctx, (unsigned const char **)Ds, (3 * HASH_BYTES + ROUNDS * (NPACKED_BYTES + MPACKED_BYTES)) * 8);
 		Keccak_HashFinaltimes4(&ctx, NULL);
 		Keccak_HashSqueezetimes4(&ctx, h1s, ((ROUNDS + 7) & ~7));
 		for (int k = 0; k < 4; k++) {

@@ -21,7 +21,7 @@ int crypto_sign_signature(uint8_t *sig, size_t *siglen,
 /**
  * Forgery attack on MQDSS
  */
-int crypto_sign_cheating(uint8_t *sig, size_t *siglen,
+int crypto_sign_forge(uint8_t *sig, size_t *siglen,
                        const uint8_t *m, size_t mlen, const uint8_t *pk);
 /**
  * Verifies a detached signature and message under a given public key.

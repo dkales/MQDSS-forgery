@@ -243,17 +243,17 @@ int crypto_sign_signature(uint8_t* sig, size_t* siglen,
 	return 0;
 }
 
-static void debug_print(const unsigned char* buf, size_t len) {
-	for (size_t j = 0; j < len; j++) {
-		printf("%02x", buf[j]);
-	}
-	printf("\n");
-}
+//static void debug_print(const unsigned char* buf, size_t len) {
+//	for (size_t j = 0; j < len; j++) {
+//		printf("%02x", buf[j]);
+//	}
+//	printf("\n");
+//}
 
 /**
  * Returns an array containing a detached signature.
  */
-int crypto_sign_cheating(uint8_t* sig, size_t* siglen,
+int crypto_sign_forge(uint8_t* sig, size_t* siglen,
 	const uint8_t* m, size_t mlen, const uint8_t* pk)
 {
 	signed char F[F_LEN];
