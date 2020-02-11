@@ -437,7 +437,6 @@ int crypto_sign_forge(uint8_t* sig, size_t* siglen,
 		// otherwise we try to answer b=1 in repetition i
 		// this allows us to try 2^SECOND_ROUND_GUESSES combinations, of which we expect one to have the correct challenge when hashed
 
-		// TODO: optimize via graycode, so we only need to change one value per attempt, should improve the concrete complexity
 		unsigned int round2_fixes = 0;
 		for (i = 0; i < ROUNDS; i++) {
 			if (alphas[i] == alpha_guess) {
